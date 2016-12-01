@@ -2,6 +2,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:background="?selectableItemBackground"
     android:descendantFocusability="blocksDescendants"
     android:minHeight="@dimen/md_listitem_height"
     android:orientation="horizontal"
@@ -11,11 +12,10 @@
     android:paddingStart="@dimen/md_dialog_frame_margin"
     tools:gravity="start|center_vertical">
 
-    <RadioButton
-        android:id="@+id/control"
+    <android.support.v7.widget.AppCompatRadioButton
+        android:id="@+id/md_control"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
-        android:button="@drawable/abc_btn_radio_material"
         android:background="@null"
         android:clickable="false"
         android:focusable="false"
@@ -23,7 +23,7 @@
         android:gravity="center_vertical" />
 
     <TextView
-        android:id="@+id/title"
+        android:id="@+id/md_title"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:gravity="center_vertical"

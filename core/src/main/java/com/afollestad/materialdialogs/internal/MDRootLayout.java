@@ -9,7 +9,6 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.os.Build;
 import android.support.annotation.Nullable;
-import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.util.AttributeSet;
 import android.view.View;
@@ -20,8 +19,8 @@ import android.widget.AdapterView;
 import android.widget.ScrollView;
 
 import com.afollestad.materialdialogs.GravityEnum;
-import com.afollestad.materialdialogs.MaterialDialog;
 import com.afollestad.materialdialogs.R;
+import com.afollestad.materialdialogs.StackingBehavior;
 import com.afollestad.materialdialogs.util.DialogUtils;
 
 /**
@@ -43,7 +42,7 @@ public class MDRootLayout extends ViewGroup {
     private boolean mDrawTopDivider = false;
     private boolean mDrawBottomDivider = false;
     private final MDButton[] mButtons = new MDButton[3];
-    private boolean mForceStack = false;
+    private StackingBehavior mStackBehavior = StackingBehavior.ADAPTIVE;
     private boolean mIsStacked = false;
     private boolean mUseFullPadding = true;
     private boolean mReducePaddingNoTitleNoButtons;
@@ -114,13 +113,13 @@ public class MDRootLayout extends ViewGroup {
         super.onFinishInflate();
         for (int i = 0; i < getChildCount(); i++) {
             View v = getChildAt(i);
-            if (v.getId() == R.id.titleFrame) {
+            if (v.getId() == R.id.md_titleFrame) {
                 mTitleBar = v;
-            } else if (v.getId() == R.id.buttonDefaultNeutral) {
+            } else if (v.getId() == R.id.md_buttonDefaultNeutral) {
                 mButtons[INDEX_NEUTRAL] = (MDButton) v;
-            } else if (v.getId() == R.id.buttonDefaultNegative) {
+            } else if (v.getId() == R.id.md_buttonDefaultNegative) {
                 mButtons[INDEX_NEGATIVE] = (MDButton) v;
-            } else if (v.getId() == R.id.buttonDefaultPositive) {
+            } else if (v.getId() == R.id.md_buttonDefaultPositive) {
                 mButtons[INDEX_POSITIVE] = (MDButton) v;
             } else {
                 mContent = v;
@@ -137,7 +136,11 @@ public class MDRootLayout extends ViewGroup {
         boolean hasButtons = false;
 
         final boolean stacked;
-        if (!mForceStack) {
+        if (mStackBehavior == StackingBehavior.ALWAYS) {
+            stacked = true;
+        } else if (mStackBehavior == StackingBehavior.NEVER) {
+            stacked = false;
+        } else {
             int buttonsWidth = 0;
             for (MDButton button : mButtons) {
                 if (button != null && isVisible(button)) {
@@ -152,8 +155,6 @@ public class MDRootLayout extends ViewGroup {
                     .getDimensionPixelSize(R.dimen.md_neutral_button_margin);
             final int buttonFrameWidth = width - 2 * buttonBarPadding;
             stacked = buttonsWidth > buttonFrameWidth;
-        } else {
-            stacked = true;
         }
 
         int stackedHeight = 0;
@@ -343,8 +344,8 @@ public class MDRootLayout extends ViewGroup {
         setUpDividersVisibility(mContent, true, true);
     }
 
-    public void setForceStack(boolean forceStack) {
-        mForceStack = forceStack;
+    public void setStackingBehavior(StackingBehavior behavior) {
+        mStackBehavior = behavior;
         invalidate();
     }
 
@@ -422,14 +423,13 @@ public class MDRootLayout extends ViewGroup {
                 }
             });
         } else if (view instanceof RecyclerView) {
-            /* Scroll offset detection for RecyclerView isn't reliable b/c the OnScrollChangedListener
-            isn't always called on scroll. We can't set a OnScrollListener either because that will
-            override the user's OnScrollListener if they set one.*/
             boolean canScroll = canRecyclerViewScroll((RecyclerView) view);
             if (setForTop)
                 mDrawTopDivider = canScroll;
             if (setForBottom)
                 mDrawBottomDivider = canScroll;
+            if (canScroll)
+                addScrollListener((ViewGroup) view, setForTop, setForBottom);
         } else if (view instanceof ViewGroup) {
             View topView = getTopView((ViewGroup) view);
             setUpDividersVisibility(topView, setForTop, setForBottom);
@@ -443,32 +443,52 @@ public class MDRootLayout extends ViewGroup {
     private void addScrollListener(final ViewGroup vg, final boolean setForTop, final boolean setForBottom) {
         if ((!setForBottom && mTopOnScrollChangedListener == null
                 || (setForBottom && mBottomOnScrollChangedListener == null))) {
-            ViewTreeObserver.OnScrollChangedListener onScrollChangedListener = new ViewTreeObserver.OnScrollChangedListener() {
-                @Override
-                public void onScrollChanged() {
-                    boolean hasButtons = false;
-                    for (MDButton button : mButtons) {
-                        if (button != null && button.getVisibility() != View.GONE) {
-                            hasButtons = true;
-                            break;
+            if (vg instanceof RecyclerView) {
+                RecyclerView.OnScrollListener scrollListener = new RecyclerView.OnScrollListener() {
+                    @Override
+                    public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
+                        super.onScrolled(recyclerView, dx, dy);
+                        boolean hasButtons = false;
+                        for (MDButton button : mButtons) {
+                            if (button != null && button.getVisibility() != View.GONE) {
+                                hasButtons = true;
+                                break;
+                            }
                         }
-                    }
-                    if (vg instanceof WebView) {
-                        invalidateDividersForWebView((WebView) vg, setForTop, setForBottom, hasButtons);
-                    } else {
                         invalidateDividersForScrollingView(vg, setForTop, setForBottom, hasButtons);
+                        invalidate();
                     }
-                    invalidate();
-                }
-            };
-            if (!setForBottom) {
-                mTopOnScrollChangedListener = onScrollChangedListener;
-                vg.getViewTreeObserver().addOnScrollChangedListener(mTopOnScrollChangedListener);
+                };
+                ((RecyclerView) vg).addOnScrollListener(scrollListener);
+                scrollListener.onScrolled((RecyclerView) vg, 0, 0);
             } else {
-                mBottomOnScrollChangedListener = onScrollChangedListener;
-                vg.getViewTreeObserver().addOnScrollChangedListener(mBottomOnScrollChangedListener);
+                ViewTreeObserver.OnScrollChangedListener onScrollChangedListener = new ViewTreeObserver.OnScrollChangedListener() {
+                    @Override
+                    public void onScrollChanged() {
+                        boolean hasButtons = false;
+                        for (MDButton button : mButtons) {
+                            if (button != null && button.getVisibility() != View.GONE) {
+                                hasButtons = true;
+                                break;
+                            }
+                        }
+                        if (vg instanceof WebView) {
+                            invalidateDividersForWebView((WebView) vg, setForTop, setForBottom, hasButtons);
+                        } else {
+                            invalidateDividersForScrollingView(vg, setForTop, setForBottom, hasButtons);
+                        }
+                        invalidate();
+                    }
+                };
+                if (!setForBottom) {
+                    mTopOnScrollChangedListener = onScrollChangedListener;
+                    vg.getViewTreeObserver().addOnScrollChangedListener(mTopOnScrollChangedListener);
+                } else {
+                    mBottomOnScrollChangedListener = onScrollChangedListener;
+                    vg.getViewTreeObserver().addOnScrollChangedListener(mBottomOnScrollChangedListener);
+                }
+                onScrollChangedListener.onScrollChanged();
             }
-            onScrollChangedListener.onScrollChanged();
         }
     }
 
@@ -501,25 +521,7 @@ public class MDRootLayout extends ViewGroup {
     }
 
     public static boolean canRecyclerViewScroll(RecyclerView view) {
-        if (view == null || view.getAdapter() == null || view.getLayoutManager() == null)
-            return false;
-        final RecyclerView.LayoutManager lm = view.getLayoutManager();
-        final int count = view.getAdapter().getItemCount();
-        int lastVisible;
-
-        if (lm instanceof LinearLayoutManager) {
-            LinearLayoutManager llm = (LinearLayoutManager) lm;
-            lastVisible = llm.findLastVisibleItemPosition();
-        } else {
-            throw new MaterialDialog.NotImplementedException("Material Dialogs currently only supports LinearLayoutManager. Please report any new layout managers.");
-        }
-
-        if (lastVisible == -1)
-            return false;
-        /* We scroll if the last item is not visible */
-        final boolean lastItemVisible = lastVisible == count - 1;
-        return !lastItemVisible ||
-                (view.getChildCount() > 0 && view.getChildAt(view.getChildCount() - 1).getBottom() > view.getHeight() - view.getPaddingBottom());
+        return view != null && view.getLayoutManager() != null && view.getLayoutManager().canScrollVertically();
     }
 
     private static boolean canScrollViewScroll(ScrollView sv) {
